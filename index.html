@@ -1,0 +1,113 @@
+<title> Creation </title>
+<style>
+	button {
+		cursor: pointer;
+	}
+	body {
+		background-color: #aef0f0;
+	}
+	canvas {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 100vw;
+		height: 100vh;
+	}
+	#main {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: 100vw;
+		height: 100vh;
+		z-index: 999;
+		pointer-events: none;
+		display: contents;
+	}
+		#main > * {
+			pointer-events: all;
+		}
+	#materials {
+		top: 1vmin;
+		right: 1vmin;
+		position: absolute;
+	}
+		#materials > * {
+			display: block;
+			width: 7vmin;
+			height: 7vmin;
+			border-radius: 7vmin;
+			outline: none;
+			padding: 0;
+			margin: 0.5vmin;
+			border: 1px solid black;
+		}
+	#chat {
+		position: absolute;
+		bottom: 1vmin;
+		left: 1vmin;
+		width: 30vmax;
+		height: 40vh;
+		display: flex;
+		flex-direction: column;
+		background: rgba(10, 10, 10, 0.5);
+	}
+		#chat-container {
+			flex-grow: 1;
+			overflow-y: scroll;
+			display: flex;
+			flex-direction: column;
+			padding: 0.5vmin;
+			justify-content: flex-end;
+		}
+			#chat-input input {
+				width: 100%;
+			}
+			#chat-container * {
+				color: white;
+			}
+			#chat-container .msg {
+				display: flex;
+			}
+				#chat-container .msg .content {
+					flex-grow: 1;
+					padding-left: 0.5vmin;
+				}
+		#chat-input {
+			display: flex;
+			flex-direction: row;
+		}
+			#chat-input input {
+				flex-grow: 1;
+			}
+</style>
+<canvas id="canwgl"></canvas>
+<canvas id="can"></canvas>
+<div id="main">
+	<div id="materials"></div>
+	<div id="chat">
+		<div id="chat-container"></div>
+		<div id="chat-input">
+			<input id="chat-input-box" type="text" placeholder="Hello World">
+			<button onclick="chatSubmit()">Send</button>
+		</div>
+	</div>
+	<div id="saves">
+
+	</div>
+</div>
+<noscript> This requires JS </noscript>
+<script defer>
+{
+	// For loading and saving
+	const e_saves = document;
+	window.openSaves = () => {
+		e_saves.style.display = "block";
+	};
+	window.closeSaves = () => {
+
+	};
+}
+</script>
+<script src="chat.mjs" type="module" async></script>
+<script src="materials.mjs" type="module" async></script>
+<script src="index.mjs" type="module" defer></script>

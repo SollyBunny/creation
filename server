@@ -1,0 +1,178 @@
+// ZISS WSSCRIPT
+
+function main(utils, materials, Tilemap, Collection) {
+
+const rooms = new Collection();
+const players = new Collection();
+
+const S = JSON.stringify;
+
+function randomRoomId() {
+	const chars = "abcdefghijklmnopqrstuvwxyz1234567890";
+	let result;
+	for (let _ = 0; _ < 100; ++_) {
+		result = "";
+		for (let i = 0; i < 8; ++i)
+			result += chars.charAt(Math.floor(Math.random() * chars.length));
+		if (!rooms.hasId(result))
+			break;
+	}
+	return result;
+}
+function randomPlayerId() {
+	const chars = "abcdefghijklmnopqrstuvwxyz1234567890";
+	let result;
+	for (let _ = 0; _ < 100; ++_) {
+		result = "";
+		for (let i = 0; i < 8; ++i)
+			result += chars.charAt(Math.floor(Math.random() * chars.length));
+		if (!players.hasId(result))
+			break;
+	}
+	return result;
+}
+
+class Room {
+	constructor() {
+		this.players = new Collection();
+		this.owner = undefined;
+		this.id = randomRoomId();
+		this.tilemap = undefined;
+		rooms.add(this);
+	}
+	del() {
+		this.players.clear();
+		for (const player of players) {
+			player.ws.send(S({ t: "offline" }));
+			player.room = undefined;
+		}
+		rooms.delId(this.id);
+	}
+	setOwner(player) {
+		this.owner = player;
+		for (const player of players) {
+			player.ws.send(S({ t: "owner", u: this.owner.id }));
+		};
+	}
+	addPlayer(player) {
+		if (this.players.has(player)) return;
+		if (player.room) player.room.delPlayer(player);
+		player.ws.send(S({ t: "join", u: player.id, r: this.id }));
+		for (const player2 of this.players) {
+			if (player2 === player) continue;
+			player2.ws.send(S({ t: "join", u: player.id }));
+		}
+		this.players.add(player);
+		player.room = this;
+		if (!this.owner) {
+			this.setOwner(player);
+		}
+	}
+	delPlayer(player) {
+		this.players.del(player);
+		if (this.players.length === 0) {
+			rooms.del(this);
+			return;
+		}
+		if (this.owner === player) {
+			this.setOwner(this.players.first());
+		}
+	}
+	syncPlayer(player) {
+		if (!this.players.has(player)) return;
+		player.ws.send(S({ t: "sync", p: this.players.map(p => p.id) }));
+	}
+}
+class Player {
+	constructor(ws) {
+		this.ws = ws;
+		this.ws.player = this;
+		this.id = randomPlayerId();
+		players.add(this);
+	}
+	del() {
+		this.ws.player = undefined;
+		this.ws.send(S({ t: "offline" }));
+		if (this.room) this.room.delPlayer(this);
+		this.ws.close();
+	}
+}
+
+module.exports.open = ws => {
+	const player = new Player(ws);
+};
+module.exports.close = ws => {
+	const player = ws.player;
+	player.del();
+};
+module.exports.msg = (ws, msg) => {
+	try {
+		msg = JSON.parse(msg);
+	} catch (e) {
+		return;
+	}
+	const player = ws.player;
+	if (!player) return;
+	switch (msg.t) {
+		case "new":
+			let tilemap;
+			try {
+				tilemap = Tilemap.deserialize(msg.d);
+			} catch (e) {
+				ws.send(S({ t: "error", d: `Invalid tilemap: ${e}` }));
+				break;
+			}
+			const room = new Room();
+			room.tilemap = tilemap;
+			room.addPlayer(player);
+			break;
+		case "msg":
+			for (const player2 of player.room.players) {
+				player2.ws.send(S({ t: "msg", u: player.id, d: msg.d }));
+			}
+			break;
+	}
+	console.log(msg)
+};
+
+}
+
+function waitOnOpen(ws) {
+	if (module.exports.open !== waitOnOpen) {
+		module.exports.open(ws);
+		return;
+	}
+	setTimeout(module.exports.open.bind(this, ws), 50);
+}
+function waitOnClose(ws) {
+	if (module.exports.close !== waitOnClose) {
+		module.exports.close(ws);
+		return;
+	}
+	setTimeout(module.exports.close.bind(this, ws), 50);
+}
+function waitOnMsg(ws) {
+	if (module.exports.msg !== waitOnMsg) {
+		module.exports.msg(ws);
+		return;
+	}
+	setTimeout(module.exports.msg.bind(this, ws), 50);
+}
+
+module.exports.open = waitOnOpen;
+module.exports.close = waitOnClose;
+module.exports.msg = waitOnMsg;
+
+Promise.all([
+	_import("./utils.mjs"),
+	_import("./materials.mjs"),
+	_import("./tilemapbase.mjs"),
+	_import("./collection.mjs")
+]).then(modules => {
+	main(
+		modules[0],
+		modules[1].materials,
+		modules[2].TilemapBase,
+		modules[3].Collection
+	)
+});
