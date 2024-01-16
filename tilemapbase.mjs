@@ -45,7 +45,25 @@ export class TilemapBase {
 		this.w = w;
 		this.h = h;
 		this.size = w * h;
+		this.ticks = 0;
 		this.data = new Uint8Array(this.size);
+		this.disableChanges();
+	}
+	clear() {
+		this.data.fill(0);
+		for (let x = -10; x < 10; ++x)
+			this.setTile(x, 10, 1);
+	}
+	enableChanges() {
+		this.changes = {};
+		this.addChange = this._addChange;
+	}
+	disableChanges() {
+		this.changes = undefined;
+		this.addChange = () => {};
+	}
+	_addChange(index, o, n) {
+		this.changes[index] = [o, n];
 	}
 	normX(x) {
 		return (x % this.w + this.w) % this.w;
@@ -53,27 +71,126 @@ export class TilemapBase {
 	normY(y) {
 		return (y % this.h + this.h) % this.h;
 	}
-	swap(x1, y1, x2, y2) {
-		const tempTile = this.getTile(x1, y1);
-		const tempData = this.getData(x1, y1);
-		this.setTile(x1, y1, this.getTile(x2, y2));
-		this.setData(x1, y1, this.getData(x2, y2));
-		this.setTile(x2, y2, tempTile);
-		this.setData(x2, y2, tempData);
+	index(x, y) {
+		return this.normY(y) * this.w + this.normX(x);
 	}
+	swap(x1, y1, x2, y2) {
+		const a = this.index(x1, y1);
+		const b = this.index(x2, y2);
+		const oldA = this.data[a];
+		const oldB = this.data[b];
+		this.data[a] = oldB;
+		this.data[b] = oldA;
+		this.addChange(a, oldA, oldB);
+		this.addChange(b, oldB, oldA);
+	}
+		swapIndex(a, b) {
+			const oldA = this.data[a];
+			const oldB = this.data[b];
+			this.data[a] = oldB;
+			this.data[b] = oldA;
+			this.addChange(a, oldA, oldB);
+			this.addChange(b, oldB, oldA);
+		}
+		swapIndexNot(a, x2, y2) {
+			const b = this.index(x2, y2);
+			const oldA = this.data[a];
+			const oldB = this.data[b];
+			this.data[a] = oldB;
+			this.data[b] = oldA;
+			this.addChange(a, oldA, oldB);
+			this.addChange(b, oldB, oldA);
+		}
+		swapNotIndex(x1, y1, b) {
+			const a = this.index(x1, y1);
+			const oldA = this.data[a];
+			const oldB = this.data[b];
+			this.data[a] = oldB;
+			this.data[b] = oldA;
+			this.addChange(a, oldA, oldB);
+			this.addChange(b, oldB, oldA);
+		}
 	setTile(x, y, block) {
 		const index = this.normY(y) * this.w + this.normX(x);
-		this.data[index] &= 0b11110000;
-		this.data[index] |= block;
+		const o = this.data[index];
+		const n = (o & 0b11110000) | block;
+		this.data[index] = n;
+		this.addChange(index, o, n);
 	}
+		setTileIndex(index, block) {
+			const o = this.data[index];
+			const n = (o & 0b11110000) | block;
+			this.data[index] = n;
+			this.addChange(index, o, n);
+		}
+	clearTile(x, y) {
+		const index = this.normY(y) * this.w + this.normX(x);
+		const o = this.data[index];
+		const n = o & 0b11110000;
+		this.data[index] = n;
+		this.addChange(index, o, n);
+	}
+		clearTileIndex(index) {
+			const o = this.data[index];
+			const n = o & 0b11110000;
+			this.data[index] = n;
+			this.addChange(index, o, n);
+		}
+	getWhole(x, y) {
+		return this.data[this.normY(y) * this.w + this.normX(x)];
+	}
+		getWholeIndex(index) {
+			return this.data[index];
+		}
+	setWhole(x, y, data) {
+		const index = this.normY(y) * this.w + this.normX(x);
+		const o = this.data[index];
+		this.data[index] = data;
+		this.addChange(index, o, data);
+	}
+		setWholeIndex(index, data) {
+			const o = this.data[index];
+			this.data[index] = data;
+			this.addChange(index, o, data);
+		}
 	getTile(x, y) {
 		return this.data[this.normY(y) * this.w + this.normX(x)] & 0b00001111;
 	}
+		getTileIndex(index) {
+			return this.data[index] & 0b00001111;
+		}
 	setData(x, y, data) {
 		const index = this.normY(y) * this.w + this.normX(x);
-		this.data[index] &= 0b00001111;
-		this.data[index] |= data << 4;
+		const o = this.data[index];
+		const n = (o & 0b00001111) | (data << 4);
+		this.data[index] = n;
+		this.addChange(index, o, n);
 	}
+		setDataIndex(index, data) {
+			const o = this.data[index];
+			const n = (o & 0b00001111) | (data << 4);
+			this.data[index] = n;
+			this.addChange(index, o, n);
+		}
+	clearData(x, y) {
+		const index = this.normY(y) * this.w + this.normX(x);
+		const o = this.data[index];
+		const n = o & 0b00001111;
+		this.data[index] = n;
+		this.addChange(index, o, this.data[index]);
+	}
+		clearDataIndex(index) {
+			const o = this.data[index];
+			const n = o & 0b00001111;
+			this.data[index] = n;
+			this.addChange(index, o, this.data[index]);
+		}
+	getData(x, y) {
+		return this.data[this.normY(y) * this.w + this.normX(x)] >> 4;
+	}
+		getDataIndex(index) {
+			return this.data[index] >> 4;
+		}
 	setChunk(x, y, w, h, data) {
 		const endX = x + w;
 		const endY = x + h;
@@ -90,87 +207,91 @@ export class TilemapBase {
 			j += h;
 		}
 	}
-	getData(x, y) {
-		return this.data[this.normY(y) * this.w + this.normX(x)] >> 4;
-	}
 	serialize() {
 		return JSON.stringify({
 			tilemap: {
-				w: tilemap.w,
-				h: tilemap.h,
-				data: UI8_to_B64(tilemap.data)
+				w: this.w,
+				h: this.h,
+				data: UI8_to_B64(this.data)
 			}
 		});
 	}
 	tick() {
+		this.ticks += 1;
 		if (!this._flip || this._flip.w !== this.w || this._flip.h !== this.h) {
 			this._flip = new TilemapBase(this.w, this.h);
 		}
 		this._flip.data.set(this.data);
 		let i = 0;
-		for (let y = 0; y < tilemap.h; ++y) {
-			for (let x = 0; x < tilemap.w; ++x) {
-				const id = this._flip.data[i] & 0b00001111;
+		for (let y = 0; y < this.h; ++y) {
+			for (let x = 0; x < this.w; ++x) {
+				const id = this._flip.getTileIndex(i);
+				const material = materials[id];
+				if (material.update) {
+					material.update(this._flip, this, i, x, y);
+				}
+				i += 1;
+			}
+		}
+		i = 0;
+		for (let y = 0; y < this.h; ++y) {
+			for (let x = 0; x < this.w; ++x) {
+				const id = this._flip.getTileIndex(i);
 				let material = materials[id];
 				let density = material.density;
 				if (material.fluid) {
 					let data = this._flip.data[i] >> 4;
 					// Hyper optimized fluid stuff :0
-					let densityOther = materials[this._flip.getTile(x, y + 1)].density;
+					let indexOther = this.index(x, y + 1);
+					let idOther = this._flip.getTileIndex(indexOther)
+					let densityOther = materials[idOther].density;
 					if (density > densityOther) {
-						this.data[i] &= 0b00001111;
-						this.swap(x, y, x, y + 1);
-						let h = 1;
-						while (1) { // allow blocks ontop to fall without going 1 by 1
-							material = materials[this._flip.getTile(x, y - h)]
-							if (!material.fluid) break;
-							density = material.density;
-							if (density > densityOther) {
-								tilemap.setData(x, y - h + 1, 3);
-								this.swap(x, y - h + 1, x, y - h);
-							} else {
-								break;
-							}
-							h += 1;
-							densityOther = density;
-						}
+						this.setWholeIndex(i, idOther);
+						this.setWholeIndex(indexOther, id);
 					} else if (data === 3) {
-						this.data[i] &= 0b00001111;
+						this.clearData(i);
 					} else {
 						if (data === 0) {
 							data = Math.round(Math.random()) + 1;
-							this.data[i] = (this.data[i] & 0b00001111) | (data << 4);
+							this.setDataIndex(i, data);
 						}
 						const offset = (data - 1) * 2 - 1; // now -1 or 1
 						if (material.fluid === FLUIDSAND) {
-							const densityA = materials[this._flip.getTile(x + offset, y)].density;
-							if (density > densityA && density > materials[this._flip.getTile(x + offset, y + 1)].density) {
-								this.swap(x, y, x + offset, y + 1);
+							const indexADown = this.index(x + offset, y + 1);
+							const idADown = this._flip.getTileIndex(indexADown);
+							const densityADown = materials[idADown].density;
+							if (density > materials[this._flip.getTile(x + offset, y)].density && density > densityADown) {
+								this.setWholeIndex(i, this._flip.getWholeIndex(indexADown));
+								this.setWholeIndex(indexADown, this._flip.getWholeIndex(i));
 							} else {
-								const densityB = materials[this._flip.getTile(x - offset, y)].density;
-								if (density > densityB && density > materials[this._flip.getTile(x - offset, y + 1)].density) {
+								const indexBDown = this.index(x - offset, y + 1);
+								const idBDown = this._flip.getTileIndex(indexBDown);
+								const densityBDown = materials[idBDown].density;
+								if (density > materials[this._flip.getTile(x - offset, y)].density && density > densityBDown) {
 									data = 2 - data + 1;
-									this.data[i] = (this.data[i] & 0b00001111) | (data << 4);
-									this.swap(x, y, x - offset, y + 1);
+									this.setWholeIndex(i, this._flip.getWholeIndex(indexBDown));
+									this.setWholeIndex(indexBDown, id);
+									this.setDataIndex(indexBDown, data);
 								}
 							}
 						} else if (material.fluid == FLUIDLIQUID) {
-							const densityA = materials[this._flip.getTile(x + offset, y)].density;
+							const indexA = this.index(x + offset, y);
+							const idA = this._flip.getTileIndex(indexA);
+							const densityA = materials[idA].density;
 							if (densityA === 0) {
-								this.swap(x, y, x + offset, y);
+								this.swapIndex(i, indexA);
 							} else {
-								const densityB = materials[this._flip.getTile(x - offset, y)].density;
+								const indexB = this.index(x - offset, y);
+								const idB = this._flip.getTileIndex(indexB);
+								const densityB = materials[idB].density;
 								if (densityB === 0) {
 									data = 2 - data + 1;
-									this.data[i] = (this.data[i] & 0b00001111) | (data << 4);
-									this.swap(x, y, x - offset, y);
+									this.swapIndex(i, indexB);
+									this.setDataIndex(indexB, data);
 								}
 							}
 						}
 					}
-				}
-				if (material.update) {
-					material.update(this._flip, this, id, x, y);
 				}
 				i += 1;
 			}

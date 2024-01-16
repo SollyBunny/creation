@@ -1,85 +1,108 @@
-<title> Creation </title>
-<style>
-	button {
-		cursor: pointer;
-	}
-	body {
-		background-color: #aef0f0;
-	}
-	canvas {
-		position: absolute;
-		left: 0;
-		top: 0;
-		width: 100vw;
-		height: 100vh;
-	}
-	#main {
-		position: absolute;
-		left: 0;
-		top: 0;
-		width: 100vw;
-		height: 100vh;
-		z-index: 999;
-		pointer-events: none;
-		display: contents;
-	}
-		#main > * {
-			pointer-events: all;
-		}
-	#materials {
-		top: 1vmin;
-		right: 1vmin;
-		position: absolute;
-	}
-		#materials > * {
-			display: block;
-			width: 7vmin;
-			height: 7vmin;
-			border-radius: 7vmin;
-			outline: none;
-			padding: 0;
-			margin: 0.5vmin;
-			border: 1px solid black;
-		}
-	#chat {
-		position: absolute;
-		bottom: 1vmin;
-		left: 1vmin;
-		width: 30vmax;
-		height: 40vh;
-		display: flex;
-		flex-direction: column;
-		background: rgba(10, 10, 10, 0.5);
-	}
-		#chat-container {
-			flex-grow: 1;
-			overflow-y: scroll;
-			display: flex;
-			flex-direction: column;
-			padding: 0.5vmin;
-			justify-content: flex-end;
-		}
-			#chat-input input {
-				width: 100%;
+<!DOCTYPE html>
+<html>
+	<head lang="en">
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+		<title> Creation </title>
+		<style>
+			button {
+				cursor: pointer;
 			}
-			#chat-container * {
-				color: white;
+			body {
+				background-color: #aef0f0;
+				padding: 0;
+				margin: 0;
+				overflow: hidden;
+				overscroll-behavior: none;
 			}
-			#chat-container .msg {
-				display: flex;
+			canvas {
+				position: absolute;
+				left: 0;
+				top: 0;
+				width: 100vw;
+				height: 100vh;
 			}
-				#chat-container .msg .content {
-					flex-grow: 1;
-					padding-left: 0.5vmin;
+			#main {
+				position: absolute;
+				left: 0;
+				top: 0;
+				width: 100vw;
+				height: 100vh;
+				z-index: 999;
+				pointer-events: none;
+				display: contents;
+			}
+				#main > * {
+					pointer-events: all;
 				}
-		#chat-input {
-			display: flex;
-			flex-direction: row;
-		}
-			#chat-input input {
-				flex-grow: 1;
+			#materials {
+				top: 1vmin;
+				right: 1vmin;
+				position: absolute;
 			}
-</style>
+				#materials > * {
+					display: block;
+					width: 7vmin;
+					aspect-ratio: 1;
+					border-radius: 0;
+					border: none;
+					outline: none;
+					padding: 0;
+					margin: 1vh;
+					transition: 0.2s outline ease;
+				}
+				#materials > .selected {
+					outline: 2px solid white;
+				}
+			#chat {
+				position: absolute;
+				bottom: 1vmin;
+				left: 1vmin;
+				width: 30vmax;
+				height: 40vh;
+				display: flex;
+				flex-direction: column;
+				background: rgba(10, 10, 10, 0.5);
+			}
+				#chat-container {
+					flex-grow: 1;
+					overflow-y: scroll;
+					display: flex;
+					flex-direction: column;
+					padding: 0.5vmin;
+				}
+					#chat-input input {
+						width: 100%;
+					}
+					#chat-container * {
+						color: white;
+					}
+					#chat-container .msg {
+						display: flex;
+					}
+						#chat-container .msg .user:after {
+							content: ":";
+							padding-right: 1vmin;
+						}
+						#chat-container .msg .content {
+							flex-grow: 1;
+							padding-left: 0.5vmin;
+							white-space: pre-line;
+						}
+				#chat-input {
+					display: flex;
+					flex-direction: row;
+				}
+					#chat-input input {
+						flex-grow: 1;
+					}
+		</style>
+	</head>
+	<body>
+
+	</body>
+</html>
+
 <canvas id="canwgl"></canvas>
 <canvas id="can"></canvas>
 <div id="main">
@@ -108,6 +131,7 @@
 	};
 }
 </script>
+<script src="seedrandom.js" async></script>
 <script src="chat.mjs" type="module" async></script>
 <script src="materials.mjs" type="module" async></script>
 <script src="index.mjs" type="module" defer></script>

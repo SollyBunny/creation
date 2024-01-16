@@ -1,5 +1,7 @@
 // ZISS WSSCRIPT
 
+// TODO none of this is typesafe :P
+
 function main(utils, materials, Tilemap, Collection) {
 
 const rooms = new Collection();
@@ -50,23 +52,26 @@ class Room {
 	}
 	setOwner(player) {
 		this.owner = player;
-		for (const player of players) {
+		for (const player of this.players) {
 			player.ws.send(S({ t: "owner", u: this.owner.id }));
 		};
 	}
 	addPlayer(player) {
 		if (this.players.has(player)) return;
 		if (player.room) player.room.delPlayer(player);
-		player.ws.send(S({ t: "join", u: player.id, r: this.id }));
+		const out = [player.id, player.name];
 		for (const player2 of this.players) {
 			if (player2 === player) continue;
-			player2.ws.send(S({ t: "join", u: player.id }));
+			player2.ws.send(S({ t: "join", d: [ player.id, player.name ] }));
+			out.push(player2.id);
+			out.push(player2.name);
 		}
+		player.ws.send(S({ t: "join", d: out, r: this.id }));
 		this.players.add(player);
 		player.room = this;
-		if (!this.owner) {
+		player.tickSync = false;
+		if (!this.owner)
 			this.setOwner(player);
-		}
 	}
 	delPlayer(player) {
 		this.players.del(player);
@@ -74,25 +79,70 @@ class Room {
 			rooms.del(this);
 			return;
 		}
+		for (const player2 of this.players) {
+			player2.ws.send(S({ t: "leave", d: [ player.id ]}));
+		}
 		if (this.owner === player) {
 			this.setOwner(this.players.first());
 		}
 	}
-	syncPlayer(player) {
-		if (!this.players.has(player)) return;
-		player.ws.send(S({ t: "sync", p: this.players.map(p => p.id) }));
+	tick() {
+		if (!this.tilemap.changes) {
+			this.tilemap.enableChanges();
+		}
+		// const before = new Uint8Array(this.tilemap.data);
+		this.tilemap.tick();
+		let data, diff;
+		for (const player2 of this.players) {
+			if (!player2.tickSync) {
+				if (!data) {
+					data = this.tilemap.serialize();
+				}
+				player2.tickSync = true;
+				player2.ws.send(S({ t: "t", d: data }));
+			} else if (this.tilemap.ticks % 100 === 0) {
+				if (!diff) {
+					diff = utils.arrayDiffSerialize(this.tilemap.changes, this.tilemap.w, this.tilemap.h);
+					this.tilemap.changes = [];
+				}
+				player2.ws.send(diff);
+			} else {
+				player2.ws.send(S({ t: "t" }));
+			}
+		}
+	}
+	move() {
+		const moveData = [];
+		for (const player2 of this.players) {
+			if (
+				player2.x !== undefined &&
+				(player2.sentX !== player2.x || player2.sentY !== player2.y)
+			) {
+				player2.sentX = player2.x;
+				player2.sentY = player2.y;
+				moveData.push(
+					player2.id,
+					player2.x, player2.y,
+					player2.xv, player2.yv
+				);
+			}
+		}
+		if (moveData.length > 0) {
+			for (const player2 of this.players) {
+				player2.ws.send(S({ t: "m", d: moveData }));
+			}
+		}
 	}
 }
 class Player {
 	constructor(ws) {
 		this.ws = ws;
 		this.ws.player = this;
-		this.id = randomPlayerId();
+		this.name = this.id = randomPlayerId();
 		players.add(this);
 	}
 	del() {
 		this.ws.player = undefined;
-		this.ws.send(S({ t: "offline" }));
 		if (this.room) this.room.delPlayer(this);
 		this.ws.close();
 	}
@@ -111,6 +161,8 @@ module.exports.msg = (ws, msg) => {
 	} catch (e) {
 		return;
 	}
+	if (["new", "t", "m"].indexOf(msg.t) === -1)
+		console.log(msg)
 	const player = ws.player;
 	if (!player) return;
 	switch (msg.t) {
@@ -119,7 +171,7 @@ module.exports.msg = (ws, msg) => {
 			try {
 				tilemap = Tilemap.deserialize(msg.d);
 			} catch (e) {
-				ws.send(S({ t: "error", d: `Invalid tilemap: ${e}` }));
+				ws.send(S({ t: "error", d: [ `Invalid tilemap: ${e}` ] }));
 				break;
 			}
 			const room = new Room();
@@ -127,15 +179,89 @@ module.exports.msg = (ws, msg) => {
 			room.addPlayer(player);
 			break;
 		case "msg":
-			for (const player2 of player.room.players) {
-				player2.ws.send(S({ t: "msg", u: player.id, d: msg.d }));
+			msg.d = String(msg.d);
+			if (msg.d.length > 128) {
+				ws.send(S({ t: "error", d: [ "Message too long" ] }));
+				break;
 			}
+			for (const player2 of player.room.players)
+				player2.ws.send(S({ t: "msg", d: [player.name, msg.d] }));
+			break;
+		case "nick":
+			msg.d = String(msg.d);
+			if (msg.d.length > 16) {
+				ws.send(S({ t: "error", d: [ "Nickname too long" ] }));
+				break;
+			}
+			if (msg.d.length < 4) {
+				ws.send(S({ t: "error", d: [ "Nickname too short" ] }));
+				break;
+			}
+			if (player.name === msg.d) {
+				ws.send(S({ t: "error", d: [ "You already have that nickname" ] }));
+				break;
+			}
+			if (player.room.players.find(player2 => { return player2.name === msg.d; })) {
+				ws.send(S({ t: "error", d: [ "Someone already has that nickname" ] }));
+				break;
+			}
+			const match = msg.d.match(/[a-zA-Z0-9_ ]+/);
+			if (match === null || !match[0] || match[0] !== msg.d) {
+				ws.send(S({ t: "error", d: [ "Invalid characters in nickname" ] }));
+				break;
+			}
+			player.name = msg.d;
+			for (const player2 of player.room.players)
+				player2.ws.send(S({ t: "nick", d: [player.id, player.name] }));
+			break;
+		case "p":
+			if (!player.room) break;
+			msg.d = parseInt(msg.d);
+			if (isNaN(msg.d) || msg.d < 0 || msg.d >= materials.length) break;
+			if (!msg.i || typeof msg.i.map !== "function") break;
+			msg.i = msg.i.map(i => parseInt(i));
+			if (msg.i.find(i => isNaN(i) || i < 0 || i >= player.room.tilemap.size)) break;
+			if (!player.room.tilemap.changes)
+				player.room.tilemap.enableChanges();
+			for (const i of msg.i)
+				player.room.tilemap.setTileIndex(i, msg.d);
+			for (const player2 of player.room.players)
+				player2.ws.send(S({ t: "p", d: msg.d, i: msg.i, u: player.id }));
+			break;
+		case "rooms":
+			ws.send(S({ t: "rooms", d: rooms.map(room => room.id) }));
+			break;
+		case "room":
+			const newRoom = rooms[msg.d];
+			if (!newRoom) {
+				ws.send(S({ t: "error", d: [ "Invalid room ID" ] }));
+				break;
+			}
+			newRoom.addPlayer(player);
+			break;
+		case "m":
+			player.x = msg.d[0];
+			player.y = msg.d[1];
+			player.xv = msg.d[2];
+			player.yv = msg.d[3];
 			break;
 	}
-	console.log(msg)
 };
 
+function tick() {
+	rooms.forEach(room => room.tick());
+	setTimeout(tick, 50);
 }
+function move() {
+	rooms.forEach(room => room.move());
+	setTimeout(move, 10);
+}
+setTimeout(tick);
+setTimeout(move);
+
+}
+
+//
 
 function waitOnOpen(ws) {
 	if (module.exports.open !== waitOnOpen) {

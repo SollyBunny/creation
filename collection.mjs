@@ -5,7 +5,7 @@ export class Collection {
 	add(item) {
 		if (this.set.has(item)) return;
 		this.set.add(item);
-		this[item.id] = item.id;
+		this[item.id] = item;
 	}
 	del(item) {
 		if (!this.set.has(item)) return;
@@ -28,8 +28,30 @@ export class Collection {
 			delete this[item.id];
 		this.set.clear();
 	}
+	forEach(callback) {
+		for (const item of this.set)
+			callback(item);
+	}
+	map(callback) {
+		const out = [];
+		for (const item of this.set)
+			out.push(callback(item));
+		return out;
+	}
+	find(callback) {
+		for (const item of this.set)
+			if (callback(item)) return item;
+		return null;
+	}
+	filter(callback) {
+		const out = new Collection();
+		for (const item of this.set) {
+			if (callback(item)) out.add(item);
+		}
+		return out;
+	}
 	get first() {
-		this.set.values().next().value;
+		return this.set.values().next().value;
 	}
 	get length() {
 		return this.set.size;

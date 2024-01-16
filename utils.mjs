@@ -41,7 +41,7 @@ export function B64_to_UI8(base64) {
 import { createNoise4D, createNoise3D } from "./noise.mjs";
 
 export function genLooping2DNoise(width, height, scale) {
-	const noise3D = createNoise3D();
+	const noise3D = createNoise3D(new Math.seedrandom(42));
 	const wrapX = (v) => (v + width) % width;
 	const wrapY = (v) => (v + height) % height;
 	function looping2DNoise(x, y, z) {
@@ -80,7 +80,7 @@ export function genLooping2DNoise(width, height, scale) {
 	return imageData;
 }
 export function genLooping2DNoiseOld(size, _, scale, radius) {
-	const noise4D = createNoise4D();
+	const noise4D = createNoise4D(new Math.seedrandom(42));
 	radius = radius || 1;
 	scale = scale || 1;
 	/*
@@ -154,11 +154,32 @@ export function genLooping2DNoiseOld(size, _, scale, radius) {
 			}
 		}
 	}
-
 	return imageData;
-
 }
 
 export function colorToString(color) {
 	return `rgb(${color.r},${color.g},${color.b})`;
+}
+
+export function arrayDiffSerialize(data, w, h) {
+	const out = [1];
+	for (const index in data) {
+		let value = data[index];
+		out.push(
+			index >> 16,
+			index >> 8 & 255,
+			index & 255,
+			value[1]
+		);
+	}
+	return new Uint8Array(out);
+}
+export function arrayDiffDeserialize(array, data, w, h) {
+	for (let i = 1; i < data.length; i += 4) {
+		// console.log((data[i] << 16) | (data[i + 1] << 8) | data[i + 2], data[i], data[i + 1], data[i + 2], data[i + 3]);
+		const index = (data[i] << 16) | (data[i + 1] << 8) | data[i + 2];
+		const value = data[i + 3];
+		array[index] = value;
+	}
+	return array;
 }

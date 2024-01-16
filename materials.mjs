@@ -3,12 +3,16 @@
 
 export const materials = [];
 
+let selected;
 function materialToolOnClick(event) {
 	const tool = parseInt(event.target.value);
 	if (isNaN(tool)) return;
 	if (tool < 0) return;
 	if (tool >= materials.length) return;
+	(selected || event.target.parentElement.children[0]).classList.remove("selected");
 	mouse.tool = tool;
+	event.target.classList.add("selected");
+	selected = event.target;
 }
 import { colorToString } from "./utils.mjs";
 export function addMaterial(opts) {
@@ -17,7 +21,6 @@ export function addMaterial(opts) {
 		if (opts.placeable) {
 			const el = document.createElement("button");
 			el.style.backgroundColor = colorToString(opts.color);
-			el.textContent = opts.name;
 			el.title = opts.desc;
 			el.value = materials.length;
 			el.addEventListener("click", materialToolOnClick);
@@ -224,15 +227,6 @@ export const DIRT = addMaterial({
 	density: 3,
 	fluid: FLUIDSAND,
 	collide: COLLIDESOLID,
-	update: (src, des, id, x, y) => {
-		if (src.getTile(x, y - 1) === WATER) {
-			src.setTile(x, y - 1, NONE);
-			src.setTile(x, y - 1, NONE);
-			des.setTile(x, y, GRASS);
-			des.setTile(x, y, GRASS);
-			return;
-		}
-	},
 	shader: `
 gl_FragColor = vec4(116.0 / 255.0, 80.0 / 255.0, 46.0 / 255.0, 1.0);
 vec4 data = texture2D(noise, vec2(pos.y, pos.x) / noiseSize);
@@ -253,9 +247,28 @@ export const WATER = addMaterial({
 	color: { r: 48, g: 143, b: 168 },
 	placeable: true,
 	density: 1,
+	fire: -1,
 	fluid: FLUIDLIQUID,
 	collide: COLLIDELIQUID,
-	// update: UPDATELIQUID,
+	update: (src, des, i, x, y) => {
+		const indexBelow = src.index(x, y + 1);
+		const below = src.getTileIndex(indexBelow);
+		let after;
+		switch (below) {
+			case DIRT:
+				after = GRASS;
+				break;
+			case LAVA:
+				after = OBBY;
+				break;
+			default: return;
+		}
+		src.setWhole(i, NONE);
+		des.setWhole(i, NONE);
+		src.setWhole(indexBelow, after)
+		des.setWhole(indexBelow, after)
+		return;
+	},
 	shader: `
 gl_FragColor = vec4(48.0 / 255.0, 143.0 / 255.0, 168.0 / 255.0, 1.0);
 vec4 data = texture2D(noise, vec2(pos.y, pos.x) / noiseSize);
@@ -278,18 +291,9 @@ export const LAVA = addMaterial({
 	color: { r: 242, g: 72, b: 49 },
 	placeable: true,
 	density: 2,
-	fire: true,
+	fire: 10000,
 	fluid: FLUIDLIQUID,
 	collide: COLLIDELIQUID,
-	update: (src, des, id, x, y) => {
-		if (src.getTile(x, y - 1) === WATER) {
-			src.setTile(x, y - 1, NONE);
-			src.setTile(x, y - 1, NONE);
-			des.setTile(x, y, OBBY);
-			des.setTile(x, y, OBBY);
-			return;
-		}
-	},
 	shader: `
 gl_FragColor = vec4(242.0 / 255.0, 72.0 / 255.0, 49.0 / 255.0, 1.0);
 vec4 data = texture2D(noise, vec2(pos.y, pos.x) / noiseSize);

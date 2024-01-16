@@ -6,36 +6,32 @@ export function collidesBoxBox(a, b) {
 	return (Math.abs((a.x + a.w / 2) - (b.x + b.w / 2)) * 2 < (a.w + b.w)) && (Math.abs((a.y + a.h / 2) - (b.y + b.h / 2)) * 2 < (a.h + b.h));
 }
 export function collidesBoxTilemap(box, tilemap) {
-	let collideTypeBack = false;
-	let fire = false;
+	let materialBack = false;
 	const out = {};
 	for (let x = Math.floor(box.x - box.w); x < box.x + box.w; ++x) {
 		for (let y = Math.floor(box.y - box.h); y < box.y + box.h; ++y) {
 			const id = tilemap.getTile(x, y);
 			const material = materials[id];
 			const collideType = material.collide;
-			if (material.fire) out.fire = true;
 			if (collideType === COLLIDENONE) continue;
 			const collision = collidesBoxBox(box, {
 				x: x, y: y,
 				w: 1, h: 1
 			});
 			if (!collision) continue;
-			if (collideType === COLLIDESOLID) return COLLIDESOLID;
-			if (collideType > collideTypeBack)
-				collideTypeBack = collideType;
+			if (collideType === COLLIDESOLID) return material;
+			if (collideType > materialBack.type) continue;
+			materialBack = material;
 		}
 	}
-	return collideTypeBack;
-	// return {
-	// 	type: collideTypeBack,
-	// 	fire: fire
-	// };
+	return materialBack;
 }
 export function collides(a, b) {
 	// this is really dumb and must be hardcoded, but whatevs
 	if (a.collideType === "box" && b.collideType === "tilemap")
 		return collidesBoxTilemap(a, b);
+	if (a.collideType === "box" && b.collideType === "box")
+		return collidesBoxBox(a, b) ? b : false;
 }
 
 export const things = new Set();
@@ -58,31 +54,44 @@ export class Tilemap extends TilemapBase {
 	}
 	constructor(w, h) {
 		super(w, h);
-		// webgl stuff
+		if (!this.initGL()) {
+			this._wgl = this.wgl;
+			delete this.wgl;
+			console.error("WebGL failed to init, falling back to canvas");
+		}
+	}
+	initGL() {
 		const wgl = {};
 		wgl.ctx = canwgl.getContext("webgl");
+		if (!wgl.ctx) {
+			console.error("WebGL ctx not available");
+			return false;
+		}
 		this.wgl = wgl;
 		// Vert shader
 		const vertShader = wgl.ctx.createShader(wgl.ctx.VERTEX_SHADER);
+		if (!vertShader) {
+			console.error("Vert shader couldn't be created");
+			return false;
+		}
 		wgl.ctx.shaderSource(vertShader, `attribute vec4 position; void main() { gl_Position = position; }`);
 		wgl.ctx.compileShader(vertShader);
+		if (!wgl.ctx.getShaderParameter(vertShader, wgl.ctx.COMPILE_STATUS)) {
+			console.error("Vert shader compilation error:", wgl.ctx.getShaderInfoLog(vertShader));
+			return false;
+		}
 		// Frag shader
-		const fragmentShaderCode = `//#version 300 es
-
+		const fragmentShaderCode = `
 precision mediump float;
-
 const vec2 noiseSize = vec2(${this.w}.0, ${this.h}.0);
 const vec4 black = vec4(0.0, 0.0, 0.0, 1.0);
 const vec4 white = vec4(1.0, 1.0, 1.0, 0.0);
-
 uniform sampler2D noise;
 uniform sampler2D tilemap;
-
 uniform vec2 resolution;
 uniform vec2 size;
 uniform float time;
 uniform vec3 camera;
-
 void main() {
 	// Get pos in world space
 	vec2 raw;
@@ -92,11 +101,9 @@ void main() {
 	raw.y = mod(mod(raw.y, size.y) + size.y, size.y);
 	vec2 pos = floor(raw);
 	vec2 off = mod(raw, 1.0);
-
 	float tile = texture2D(tilemap, pos / size).r;
 	tile = mod(tile, 16.0 / 256.0);
 	// gl_FragColor = vec4(tile * 255.0 / 8.0, 0, 0, 1); return;
-	
 	${materials.map((material, id) => {
 		let out = ` if (abs(tile - ${(id / 255).toFixed(100).replace(/0+$/, "")}) < 0.003) {`;
 		if (material.shader) {
@@ -108,16 +115,18 @@ void main() {
 	}).join("} else ")} } else {
 		discard;
 	}
-}
-`;
+}`;
 		const fragShader = wgl.ctx.createShader(wgl.ctx.FRAGMENT_SHADER);
+		if (!fragShader) {
+			console.error("Frag shader couldn't be created");
+			return false;
+		}
 		wgl.ctx.shaderSource(fragShader, fragmentShaderCode);
 		wgl.ctx.compileShader(fragShader);
 		if (!wgl.ctx.getShaderParameter(fragShader, wgl.ctx.COMPILE_STATUS)) {
 			console.log(fragmentShaderCode.split("\n").map((line, i) => `${i}: ${line}`).join("\n"));
-			console.log(this, this.w, this.h)
 			console.error("Frag shader compilation error:", wgl.ctx.getShaderInfoLog(fragShader));
-			return;
+			return false;
 		}
 		// Program
 		wgl.prog = wgl.ctx.createProgram();
@@ -158,35 +167,34 @@ void main() {
 		const positionAttribute = wgl.ctx.getAttribLocation(wgl.prog, "position");
 		wgl.ctx.enableVertexAttribArray(positionAttribute);
 		wgl.ctx.vertexAttribPointer(positionAttribute, 2, wgl.ctx.FLOAT, false, 0, 0);
-
+		// Final
+		if (wgl.ctx.getError() !== wgl.ctx.NO_ERROR) {
+			console.error("WebGL error during initialization:", wgl.ctx.getError());
+			return false;
+		}
+		return true;
 	}
 	render() {
-		const wgl = this.wgl;
-		tilemap.wgl.ctx.viewport(0, 0, window.innerWidth, window.innerHeight)
-		// Use the updated texture in your shader
-		wgl.ctx.useProgram(wgl.prog);
-		wgl.ctx.activeTexture(wgl.ctx.TEXTURE0);
-		wgl.ctx.bindTexture(wgl.ctx.TEXTURE_2D, wgl.texture);
-		wgl.ctx.texParameteri(wgl.ctx.TEXTURE_2D, wgl.ctx.TEXTURE_MIN_FILTER, wgl.ctx.NEAREST);
-		wgl.ctx.texParameteri(wgl.ctx.TEXTURE_2D, wgl.ctx.TEXTURE_MAG_FILTER, wgl.ctx.NEAREST);
-		wgl.ctx.texParameteri(wgl.ctx.TEXTURE_2D, wgl.ctx.TEXTURE_WRAP_S, wgl.ctx.CLAMP_TO_EDGE);
-		wgl.ctx.texParameteri(wgl.ctx.TEXTURE_2D, wgl.ctx.TEXTURE_WRAP_T, wgl.ctx.CLAMP_TO_EDGE);
-		wgl.ctx.texSubImage2D(
-			wgl.ctx.TEXTURE_2D, 0,
-			0, 0,
-			this.w, this.h,
-			wgl.ctx.LUMINANCE, wgl.ctx.UNSIGNED_BYTE,
-			this.data
-		);
-
-		wgl.ctx.uniform2f(wgl.locRes, can.width, can.height);
-		wgl.ctx.uniform2f(wgl.locSize, this.w, this.h);
-		wgl.ctx.uniform1f(wgl.locTime, timing.last);
-		wgl.ctx.uniform3f(wgl.locCamera, camera.x, camera.y, camera.zoom);
-
-		wgl.ctx.drawArrays(wgl.ctx.TRIANGLE_STRIP, 0, 4);
+		if (this.wgl) {
+			if (this.wgl.ctx.isContextLost() && !this.wglLoading) {
+				delete this.wgl;
+				this.wglLoading = true;
+				setTimeout(() => {
+					const out = this.initGL();
+					this.wglLoading = false;
+					if (out) return;
+					this._wgl = this.wgl;
+					delete this.wgl;
+					console.error("WebGL failed to init, falling back to canvas");
+				}, 1000);
+			} else {
+				this.renderGL();
+				return;
+			}
+		}
+		this.render2D();
 	}
-	renderFast() {
+	render2D() {
 		for (const material of materials) {
 			if (material.density === 0) continue;
 			material.path = new Path2D();
@@ -210,11 +218,38 @@ void main() {
 			delete material.path;
 		}
 	}
+	renderGL() {
+		const wgl = this.wgl;
+		this.wgl.ctx.viewport(0, 0, window.innerWidth, window.innerHeight)
+		// Use the updated texture in your shader
+		wgl.ctx.useProgram(wgl.prog);
+		wgl.ctx.activeTexture(wgl.ctx.TEXTURE0);
+		wgl.ctx.bindTexture(wgl.ctx.TEXTURE_2D, wgl.texture);
+		wgl.ctx.texParameteri(wgl.ctx.TEXTURE_2D, wgl.ctx.TEXTURE_MIN_FILTER, wgl.ctx.NEAREST);
+		wgl.ctx.texParameteri(wgl.ctx.TEXTURE_2D, wgl.ctx.TEXTURE_MAG_FILTER, wgl.ctx.NEAREST);
+		wgl.ctx.texParameteri(wgl.ctx.TEXTURE_2D, wgl.ctx.TEXTURE_WRAP_S, wgl.ctx.CLAMP_TO_EDGE);
+		wgl.ctx.texParameteri(wgl.ctx.TEXTURE_2D, wgl.ctx.TEXTURE_WRAP_T, wgl.ctx.CLAMP_TO_EDGE);
+		wgl.ctx.texSubImage2D(
+			wgl.ctx.TEXTURE_2D, 0,
+			0, 0,
+			this.w, this.h,
+			wgl.ctx.LUMINANCE, wgl.ctx.UNSIGNED_BYTE,
+			this.data
+		);
+
+		wgl.ctx.uniform2f(wgl.locRes, can.width, can.height);
+		wgl.ctx.uniform2f(wgl.locSize, this.w, this.h);
+		wgl.ctx.uniform1f(wgl.locTime, timing.last);
+		wgl.ctx.uniform3f(wgl.locCamera, camera.x, camera.y, camera.zoom);
+
+		wgl.ctx.drawArrays(wgl.ctx.TRIANGLE_STRIP, 0, 4);
+	}
 }
 
 export class Box extends Thing {
 	constructor(x, y, w, h) {
 		super();
+		this.collide = COLLIDESOLID;
 		this.collideType = "box";
 		this.x = x - w / 2;
 		this.y = y - h / 2;
@@ -226,12 +261,16 @@ export class Box extends Thing {
 		this.walled = 0;
 		this.color = "black";
 		this.gravity = 0.01;
+		this.fire = -1;
 	}
 	render() {
 		ctx.fillStyle = this.color;
 		ctx.fillRect(this.x, this.y, this.w, this.h);
 	}
 	update() {
+		if (this.fire > 0) {
+			this.fire -= timing.delta;
+		}
 		this.xv *= 0.8;
 		this.yv *= 0.9;
 		this.yv += this.gravity;
@@ -243,7 +282,10 @@ export class Box extends Thing {
 				this.x += this.xv * timing.delta / steps;
 				for (const thing of things) {
 					if (thing === this) continue;
-					switch (collides(this, thing)) {
+					const collision = collides(this, thing);
+					if (collision.fire > this.fire || collision.fire === -1)
+						this.fire = collision.fire;
+					switch (collision.collide) {
 						case COLLIDESOLID:
 							this.walled = Math.sign(this.xv);
 							this.x -= this.xv * timing.delta / steps;
@@ -259,7 +301,10 @@ export class Box extends Thing {
 				this.y += this.yv * timing.delta / steps;
 				for (const thing of things) {
 					if (thing === this) continue;
-					switch (collides(this, thing)) {
+					const collision = collides(this, thing);
+					if (collision.fire > this.fire || collision.fire === -1)
+						this.fire = collision.fire;
+					switch (collision.collide) {
 						case COLLIDEPLATFORM:
 							if (this.phaseThruPlatforms) break;
 							if (this.yv < 0) break;
